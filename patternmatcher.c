@@ -62,10 +62,13 @@ pattern_matcher_free(PatternMatcher *pm)
 {
         TNFA *tnfa = pm->tnfa;
 
-        for (int i = 0; i < tnfa->n_transitions; i++)
+        for (int i = 0; i < tnfa->n_transitions; i++) {
                 if (tnfa->transitions[i].state != NULL &&
                     tnfa->transitions[i].tags != TAGS_EMPTY)
                         free(tnfa->transitions[i].tags);
+                if (tnfa->transitions[i].literal.negated_ctypes != NULL)
+                        free(tnfa->transitions[i].literal.negated_ctypes);
+        }
 
         free(tnfa->transitions);
 
@@ -86,6 +89,8 @@ pattern_matcher_free(PatternMatcher *pm)
         free(tnfa->tag_directions);
         free(tnfa->minimal_tags);
         free(tnfa);
+
+        free(pm->source);
 
         free(pm);
 }
@@ -130,10 +135,6 @@ pattern_matcher_initialize(int argc, VALUE *argv, VALUE self)
         VALUE2PATTERNMATCHER(self, pm);
 
         ast_compile(pool, pm->tnfa, tree, n_nodes, n_submatches);
-
-        /*
-        ast_node_print(tree);
-        */
 
         mem_pool_free(pool);
 

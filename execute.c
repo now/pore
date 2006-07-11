@@ -349,6 +349,21 @@ has_literal(ExecutionContext *context, Transition *t)
 }
 
 
+static bool
+passes_negated_ctypes(ExecutionContext *context, Transition *t)
+{
+        if (t->literal.negated_ctypes == NULL)
+                return true;
+
+        unichar c = context->prev;
+        for (CharTypePredicate *p = t->literal.negated_ctypes; *p != NULL; p++)
+                if (!(*p)(c))
+                        return false;
+
+        return true;
+}
+
+
 /*¶ For each state in the \C{reach} stack, check if there’s a transition
 leaving it, labeled with the current input symbol and passes any assertions
 associated with it, to a state not in the \C{reach_next} stack.  If so, add the
@@ -362,7 +377,8 @@ check_reach(ExecutionContext *context)
         for (Reach *r = context->reach; r->state != NULL; r++)
                 for (Transition *t = r->state; t->state != NULL; t++)
                         if (has_literal(context, t) &&
-                            passes_assertions(context, t->assertions))
+                            passes_assertions(context, t->assertions) &&
+                            passes_negated_ctypes(context, t))
                                 deal_with_transition(context, t, r);
 
         context->rn_iter->state = NULL;

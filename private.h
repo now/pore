@@ -84,3 +84,5 @@ extern ID g_id_read;
 errors that relate to our library.  The second identifies the method named
 \type{read}, which will be used for certain arguments to the pattern||matcher.
 */
+
+#define lengthof(ary) (sizeof(ary) / sizeof(ary[0]))

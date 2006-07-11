@@ -1478,6 +1478,23 @@ of the same tag in the set. */
 /*¶ Next, let’s write a function that creates a transition between two
 id||and||tag sets: */
 
+static CharTypePredicate *
+ast_add_transition_create_negated_ctypes(CharTypePredicate *negated_ctypes)
+{
+        if (negated_ctypes == NULL)
+                return NULL;
+
+        int n;
+        array_find(negated_ctypes[n] == NULL, n);
+
+        CharTypePredicate *dup = ALLOC_N(CharTypePredicate, n + 1);
+        for (int i = 0; negated_ctypes[i] != NULL; i++)
+                dup[i] = negated_ctypes[i];
+        dup[n] = NULL;
+
+        return dup;
+}
+
 static void
 ast_add_transition(IDAndTags *from, IDAndTags *to, Transition *transitions,
                    int *offsets)
@@ -1493,6 +1510,9 @@ ast_add_transition(IDAndTags *from, IDAndTags *to, Transition *transitions,
                 free(t->tags);
 
         t->literal = from->literal;
+        t->literal.negated_ctypes =
+                ast_add_transition_create_negated_ctypes(from->literal.negated_ctypes);
+
         t->state = &transitions[offsets[to->id]];
         t->state_id = to->id;
         t->assertions = from->assertions | to->assertions;

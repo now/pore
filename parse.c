@@ -347,6 +347,80 @@ will deal with the characters that follow a backslash.  We will need two, as
 such escapes act differently depending on if we are currently inside what we
 call an \<escaped string> in our grammar, or not. */
 
+static bool
+my_unichar_isident(unichar c)
+{
+        return unichar_isalnum(c) || c == '_';
+}
+
+static bool
+my_unichar_isnonident(unichar c)
+{
+        return !my_unichar_isident(c);
+}
+
+static bool
+unichar_isnonalpha(unichar c)
+{
+        return !unichar_isalpha(c);
+}
+
+static bool
+unichar_isnondigit(unichar c)
+{
+        return !unichar_isdigit(c);
+}
+
+static bool
+unichar_isnonlower(unichar c)
+{
+        return !unichar_islower(c);
+}
+
+static bool
+unichar_isnonpunct(unichar c)
+{
+        return !unichar_ispunct(c);
+}
+
+static bool
+unichar_isnonspace(unichar c)
+{
+        return !unichar_isspace(c);
+}
+
+static bool
+unichar_isnonupper(unichar c)
+{
+        return !unichar_isupper(c);
+}
+
+
+static CharTypePredicate
+map_rule_to_predicate(char const * const rule, bool negate)
+{
+        static struct {
+                char const *name;
+                CharTypePredicate predicate;
+                CharTypePredicate negated_predicate;
+        } map[] = {
+                { .name = "ident", .predicate = my_unichar_isident, .negated_predicate = my_unichar_isnonident },
+                { .name = "alpha", .predicate = unichar_isalpha, .negated_predicate = unichar_isnonalpha },
+                { .name = "digit", .predicate = unichar_isdigit, .negated_predicate = unichar_isnondigit },
+                { .name = "lower", .predicate = unichar_islower, .negated_predicate = unichar_isnonlower },
+                { .name = "punct", .predicate = unichar_ispunct, .negated_predicate = unichar_isnonpunct },
+                { .name = "space", .predicate = unichar_isspace, .negated_predicate = unichar_isnonspace },
+                { .name = "ws", .predicate = unichar_isspace, .negated_predicate = unichar_isnonspace },
+                { .name = "upper", .predicate = unichar_isupper, .negated_predicate = unichar_isnonupper },
+        };
+
+        for (unsigned int i = 0; i < lengthof(map); i++)
+                if (strcmp(map[i].name, rule) == 0)
+                        return negate ? map[i].negated_predicate : map[i].predicate;
+
+        return NULL;
+}
+
 static inline unichar
 escaped_string_literal(unichar c)
 {
@@ -412,7 +486,6 @@ parse_literal(ParserContext *context, bool escaped, bool in_string_literal)
                         RAISE(context, g_ePatternError,
                               "unexpected ‘\\’ found at position %ld",
                               context_pos(context));
-
         } else {
                 c = context_next(context);
         }
@@ -472,12 +545,9 @@ parse the new input as an \NRE\ and then returning to our previous input. */
 
 /*¶ Now, then, let’s parse some rules. */
 
-static ASTNode *
-parse_rule(ParserContext *context)
+static const char *
+eat_rule(ParserContext *context)
 {
-        assert(context != NULL);
-
-        long begin_pos = context_pos(context) + 1;
         const char *begin = context_eat_while(context, rule_name_p);
 
         if (!context_is_at(context, '>'))
@@ -485,19 +555,42 @@ parse_rule(ParserContext *context)
                       "expected ‘%c’ at position %ld",
                       '>', context_pos(context) + 1);
 
-        char rule[context->input->iter - begin + 1];
-        MEMCPY(rule, begin, char, context->input->iter - begin);
-        rule[context->input->iter - begin] = '\0';
+        return begin;
+}
+
+static void
+copy_rule(ParserContext *context, char const * const begin, char *dest)
+{
+        MEMCPY(dest, begin, char, context->input->iter - begin);
+        dest[context->input->iter - begin] = '\0';
 
         context_eat(context, '>');
+}
 
-        VALUE expansion;
-        if (NIL_P(context->rules) ||
-            NIL_P(expansion = rb_hash_aref(context->rules, rb_str_new2(rule))))
-                RAISE(context, g_ePatternError,
-                      "undefined rule ‘%s’ at position %ld", rule, begin_pos);
+static ASTNode *
+parse_rule(ParserContext *context)
+{
+        assert(context != NULL);
 
-        /* TODO: look for built-in ones */
+        long begin_pos = context_pos(context) + 1;
+        const char *begin = eat_rule(context);
+        char rule[context->input->iter - begin + 1];
+        copy_rule(context, begin, rule);
+
+        VALUE expansion = Qnil;
+        if (!NIL_P(context->rules))
+                expansion = rb_hash_aref(context->rules, rb_str_new2(rule));
+
+        if (NIL_P(expansion)) {
+                CharTypePredicate predicate = map_rule_to_predicate(rule, false);
+                if (predicate == NULL)
+                        RAISE(context, g_ePatternError,
+                              "undefined rule ‘%s’ at position %ld", rule, begin_pos);
+
+                return ast_node_literal_new_predicate(context->pool,
+                                                      predicate,
+                                                      context->next_id++);
+        }
 
         context_push_input(context, StringValuePtr(expansion));
         ASTNode *uni = parse_union(context);
@@ -506,6 +599,25 @@ parse_rule(ParserContext *context)
         /* TODO: check for errors, and then "stack" them... */
 
         return uni;
+}
+
+static ASTNode *
+parse_predicate(ParserContext *context, bool negate)
+{
+        long begin_pos = context_pos(context) + 1;
+        const char *begin = eat_rule(context);
+        char rule[context->input->iter - begin + 1];
+        copy_rule(context, begin, rule);
+
+        CharTypePredicate predicate = map_rule_to_predicate(rule, negate);
+
+        if (predicate == NULL)
+                RAISE(context, g_ePatternError,
+                      "undefined predicate ‘%s’ at position %ld", rule, begin_pos);
+
+        return ast_node_literal_new_predicate(context->pool,
+                                              predicate,
+                                              context->next_id++);
 }
 
 
@@ -590,18 +702,216 @@ parse_group(ParserContext *context, bool addressed, unichar c)
         return uni;
 }
 
+static ASTNode *
+parse_range_item(ParserContext *context, bool negate)
+{
+        unichar begin, end;
+
+        unichar c = context_next(context);
+        switch (c) {
+        case '\\':
+                c = context_next(context);
+                switch (c) {
+                case '\\':
+                case '[':
+                case ']':
+                case '-':
+                case '<':
+                case '>':
+                        begin = end = c;
+                        break;
+                case 'n':
+                        begin = end = '\n';
+                        break;
+                case 't':
+                        begin = end = '\t';
+                        break;
+                default:
+                        RAISE(context, g_ePatternError,
+                              "unexpected ‘%lc’ found at position %ld",
+                              c, context_pos(context));
+                }
+                break;
+        case '<':
+                return parse_predicate(context, negate);
+        default:
+                begin = end = c;
+                if (context_is_at(context, '-')) {
+                        context_next(context);
+                        end = context_next(context);
+                }
+                break;
+        }
+
+        return ast_node_literal_new_range(context->pool, begin, end, context->next_id);
+}
+
+static int
+compare_range_items(const void *a, const void *b)
+{
+        int a_begin = (*(ASTNode **)a)->data.leaf->data.literal.data.range.begin;
+        int b_begin = (*(ASTNode **)b)->data.leaf->data.literal.data.range.begin;
+
+        return a_begin - b_begin;
+}
+
+static ASTNode *
+parse_range(ParserContext *context)
+{
+        bool negate = context_eat(context, '^');
+
+        int n_alloced_items = 32;
+        int n_items = 0;
+        ASTNode **items = ALLOC_N(ASTNode *, n_alloced_items);
+
+        int n_alloced_ctypes = 32;
+        int n_ctypes = 0;
+        ASTNode **ctypes = ALLOC_N(ASTNode *, n_alloced_ctypes);
+
+        int n_alloced_negated_ctypes = 32;
+        int n_negated_ctypes = 0;
+        CharTypePredicate *negated_ctypes = ALLOC_N(CharTypePredicate,
+                                                    n_alloced_negated_ctypes);
+
+        while (!context_is_at(context, ']')) {
+                ASTNode *item = parse_range_item(context, negate);
+                assert(item->type == AST_NODE_LEAF);
+                assert(item->data.leaf->type == LEAF_LITERAL);
+                if (item->data.leaf->data.literal.type == LITERAL_TYPE_PREDICATE) {
+                        if (negate) {
+                                if (n_negated_ctypes == n_alloced_negated_ctypes) {
+                                        n_alloced_negated_ctypes *= 2;
+                                        CharTypePredicate *tmp = REALLOC_N(negated_ctypes,
+                                                                           CharTypePredicate,
+                                                                           n_alloced_negated_ctypes);
+                                        negated_ctypes = tmp;
+                                }
+                                negated_ctypes[n_negated_ctypes++] = item->data.leaf->data.literal.data.is_ctype;
+                        } else {
+                                if (n_ctypes == n_alloced_negated_ctypes) {
+                                        n_alloced_negated_ctypes *= 2;
+                                        ASTNode **tmp = REALLOC_N(ctypes,
+                                                                  ASTNode *,
+                                                                  n_alloced_negated_ctypes);
+                                        ctypes = tmp;
+                                }
+                                ctypes[n_ctypes++] = item;
+                        }
+                } else {
+                        if (n_items == n_alloced_items) {
+                                n_alloced_items *= 2;
+                                ASTNode **tmp = REALLOC_N(items, ASTNode *, n_alloced_items);
+                                items = tmp;
+                        }
+                        items[n_items++] = item;
+                }
+        }
+
+        if (!context_eat(context, ']') || !context_eat(context, '>')) {
+                free(negated_ctypes);
+                free(ctypes);
+                free(items);
+                RAISE(context, g_ePatternError,
+                      "expected ‘]>’ at position %ld",
+                      context_pos(context));
+        }
+
+        if (n_items == 0 && n_ctypes == 0 && !negate) {
+                free(negated_ctypes);
+                free(ctypes);
+                free(items);
+                RAISE(context, g_ePatternError,
+                      "empty range at position %ld",
+                      context_pos(context));
+        }
+
+        CharTypePredicate *dup = POOL_ALLOC_N(context->pool, CharTypePredicate, n_negated_ctypes + 1);
+        for (int i = 0; i < n_negated_ctypes; i++)
+                dup[i] = negated_ctypes[i];
+        dup[n_negated_ctypes] = NULL;
+        free(negated_ctypes);
+        negated_ctypes = dup;
+
+        ASTNode *ranges = NULL;
+
+        for (int i = 0; i < n_ctypes; i++)
+                ranges = ast_node_cons_new_or_other(context->pool, ranges, ctypes[i]);
+        free(ctypes);
+
+        if (negate)
+                qsort(items, n_items, sizeof(ASTNode *), compare_range_items);
+
+        int current_begin = 0;
+        int current_end = 0;
+
+        for (int i = 0; i < n_items; i++) {
+                if (negate) {
+                        int begin = items[i]->data.leaf->data.literal.data.range.begin;
+                        int end = items[i]->data.leaf->data.literal.data.range.end;
+                        if (begin < current_end) {
+                                /* This item overlaps with a previous one. */
+                                current_end = MAX(end + 1, current_end);
+                                continue;
+                        } else {
+                                current_end = begin - 1;
+                                if (current_end >= current_begin) {
+                                        items[i]->data.leaf->data.literal.data.range.begin = current_begin;
+                                        items[i]->data.leaf->data.literal.data.range.end = current_end;
+                                        current_begin = current_end = end + 1;
+                                } else {
+                                        current_begin = current_end = end + 1;
+                                        continue;
+                                }
+                        }
+                }
+
+                items[i]->data.leaf->id = context->next_id;
+                items[i]->data.leaf->data.literal.negated_ctypes = negated_ctypes;
+
+                ranges = ast_node_union_new_or_other(context->pool, ranges, items[i]);
+        }
+        free(items);
+
+        if (negate) {
+                ASTNode *range = ast_node_literal_new_range(context->pool,
+                                                            current_begin,
+                                                            MAXUNICHAR,
+                                                            context->next_id);
+                range->data.leaf->data.literal.negated_ctypes = negated_ctypes;
+
+                ranges = ast_node_union_new_or_other(context->pool, ranges, range);
+        }
+
+        context->next_id++;
+
+        return ranges;
+}
+
 /*¶ There’s not much that needs explanation, really. */
 
 /*¶ The final set of atoms to be parsed is those that begin with a
 \TypedRegex{<}.  These are either string literals, escaped or not, or a
-rule: */
+range: */
 
 static ASTNode *
-parse_string_or_rule(ParserContext *context)
+parse_special(ParserContext *context)
 {
-        return context_is_at_any_of(context, "\"'")
-                ? parse_string_literal(context, context_next(context))
-                : parse_rule(context);
+        unichar c = context_next(context);
+        switch (c) {
+        case '"':
+        case '\'':
+                return parse_string_literal(context, c);
+        case '[':
+                return parse_range(context);
+        default:
+                context_uneat(context);
+                return parse_rule(context);
+                /*
+                RAISE(context, g_ePatternError,
+                      "unexpected ‘%lc’ found at position %ld",
+                      c, context_pos(context));
+                      */
+        }
 }
 
 /*¶ Now that we have a bunch of helper||functions for parsing various kinds of
@@ -628,7 +938,7 @@ parse_atom(ParserContext *context)
         case '(':
                 return parse_group(context, c == '(', c);
         case '<':
-                return parse_string_or_rule(context);
+                return parse_special(context);
         default:
                 context_uneat(context);
                 return parse_literal(context, true, false);

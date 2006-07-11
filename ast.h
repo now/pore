@@ -75,7 +75,6 @@ let's define the type of such functions right now: */
 
 typedef bool (*CharTypePredicate)(unichar c);
 
-
 /*¶ (The \C{CharType} prefix is derived from \CLang's standard header
 \filename{ctype.h}.)  Finally, a literal is defined as the following
 structure: */
@@ -92,6 +91,7 @@ struct _Literal {
                 } range;
                 CharTypePredicate is_ctype;
         } data;
+        CharTypePredicate *negated_ctypes;
 };
 
 
@@ -242,5 +242,6 @@ ASTNode *ast_node_cons_new_or_other(MemPool *pool, ASTNode *left, ASTNode *right
 ASTNode *ast_node_iter_new(MemPool *pool, ASTNode *atom, int min, int max,
                            bool minimal);
 ASTNode *ast_node_union_new(MemPool *pool, ASTNode *left, ASTNode *right);
+ASTNode *ast_node_union_new_or_other(MemPool *pool, ASTNode *left, ASTNode *right);
 
 void ast_node_print(ASTNode *node);

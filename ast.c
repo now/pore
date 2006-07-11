@@ -52,6 +52,19 @@ leaf_new(MemPool *pool, LeafType type, int id)
 }
 
 
+static ASTNode *
+literal_new(MemPool *pool, LiteralType type, int id)
+{
+        ASTNode *node = ast_node_new(pool, AST_NODE_LEAF);
+
+        node->data.leaf = leaf_new(pool, LEAF_LITERAL, id);
+        node->data.leaf->data.literal.type = type;
+        node->data.leaf->data.literal.negated_ctypes = NULL;
+
+        return node;
+}
+
+
 /*¶ We need one function for each leaf||node type.  There's quite a few, but
 they all work more or less the same, so we won't discuss them in any detail,
 letting them speak for themselves.  \CDef[ast_node_literal_new_char] */
@@ -59,10 +72,8 @@ letting them speak for themselves.  \CDef[ast_node_literal_new_char] */
 HIDDEN ASTNode *
 ast_node_literal_new_char(MemPool *pool, unichar c, int id)
 {
-        ASTNode *node = ast_node_new(pool, AST_NODE_LEAF);
+        ASTNode *node = literal_new(pool, LITERAL_TYPE_CHAR, id);
 
-        node->data.leaf = leaf_new(pool, LEAF_LITERAL, id);
-        node->data.leaf->data.literal.type = LITERAL_TYPE_CHAR;
         node->data.leaf->data.literal.data.c = c;
 
         return node;
@@ -72,10 +83,8 @@ ast_node_literal_new_char(MemPool *pool, unichar c, int id)
 HIDDEN ASTNode *
 ast_node_literal_new_range(MemPool *pool, unichar begin, unichar end, int id)
 {
-        ASTNode *node = ast_node_new(pool, AST_NODE_LEAF);
+        ASTNode *node = literal_new(pool, LITERAL_TYPE_RANGE, id);
 
-        node->data.leaf = leaf_new(pool, LEAF_LITERAL, id);
-        node->data.leaf->data.literal.type = LITERAL_TYPE_RANGE;
         node->data.leaf->data.literal.data.range.begin = begin;
         node->data.leaf->data.literal.data.range.end = end;
 
@@ -91,10 +100,8 @@ later on. */
 HIDDEN ASTNode *
 ast_node_literal_new_predicate(MemPool *pool, CharTypePredicate is_ctype, int id)
 {
-        ASTNode *node = ast_node_new(pool, AST_NODE_LEAF);
+        ASTNode *node = literal_new(pool, LITERAL_TYPE_PREDICATE, id);
 
-        node->data.leaf = leaf_new(pool, LEAF_LITERAL, id);
-        node->data.leaf->data.literal.type = LITERAL_TYPE_PREDICATE;
         node->data.leaf->data.literal.data.is_ctype = is_ctype;
 
         return node;
@@ -211,6 +218,22 @@ ast_node_union_new(MemPool *pool, ASTNode *left, ASTNode *right)
 }
 
 
+/*¶ Sometimes we’ll want to take the union of two nodes even though one of them
+may be \C{NULL}.  In this case, we'll simply return the node that isn’t
+\C{NULL}. */
+
+HIDDEN ASTNode *
+ast_node_union_new_or_other(MemPool *pool, ASTNode *left, ASTNode *right)
+{
+        if (left == NULL)
+                return right;
+        else if (right == NULL)
+                return left;
+        else
+                return ast_node_union_new(pool, left, right);
+}
+
+
 /*¶ ————————————————————————————————— EOD —————————————————————————————————— */
 
 
@@ -252,7 +275,7 @@ ast_node_print_simple(ASTNode *node, int indent)
                                 char s1[20];
                                 char s2[20];
 
-                                printf("‘%s’-‘%s’ :pos %d :sub %d :tags %d",
+                                printf("‘%s’–‘%s’ :pos %d :sub %d :tags %d",
                                        char_to_printable(leaf->data.literal.data.range.begin, s1, 20),
                                        char_to_printable(leaf->data.literal.data.range.end, s2, 20),
                                        leaf->id,
