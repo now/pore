@@ -8,7 +8,9 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <ned/unicode.h>
+#include <stddef.h>
+
+#include <encoding/character/utf-8/unicode.h>
 
 #include "mempool.h"
 #include "ast.h"
@@ -238,7 +240,7 @@ ast_node_union_new_or_other(MemPool *pool, ASTNode *left, ASTNode *right)
 
 
 static char *
-char_to_printable(unichar c, char *s, int len)
+char_to_printable(unichar c, char *s, size_t len)
 {
         if (unichar_isprint(c))
                 snprintf(s, len, "%lc", c);

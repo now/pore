@@ -8,8 +8,9 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <ned/unicode.h>
 #include <sys/types.h>
+
+#include <encoding/character/utf-8/unicode.h>
 
 #include "mempool.h"
 #include "private.h"
@@ -164,9 +165,10 @@ passes_assertions(ExecutionContext *context, Assertion assertions)
         if ((assertions & ASSERTION_BOS) && context->pos != 0)
                 return false;
         if ((assertions & ASSERTION_BOL) &&
-            (context->pos != 0 || context->prev != '\n'))
+            !(context->pos == 0 || context->prev == '\n'))
                 return false;
-        if ((assertions & ASSERTION_EOL) && *context->p != '\n')
+        if ((assertions & ASSERTION_EOL) &&
+            !(*context->p == '\n' || !more_input(context)))
                 return false;
         if (assertions & ASSERTION_EOS)
                 return !more_input(context);
@@ -625,6 +627,8 @@ tnfa_matches(TNFA const * const tnfa, VALUE input, VALUE *matches)
         int tags[tnfa->n_tags];
         int tmp_tags[tnfa->n_tags];
 
+        /* TODO: It would be nice to be able to report the byte position of the
+         * match as well, so need to keep track of that as well. */
         ExecutionContext context = {
                 .tnfa = tnfa,
                 .prev = '\0',

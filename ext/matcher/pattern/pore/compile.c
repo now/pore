@@ -8,7 +8,9 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <ned/unicode.h>
+#include <stddef.h>
+
+#include <encoding/character/utf-8/unicode.h>
 
 #include "private.h"
 #include "mempool.h"

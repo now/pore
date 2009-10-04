@@ -1,5 +1,5 @@
 /*
- * contents: PatternMatcher class.
+ * contents: Pore class.
  *
  * Copyright © 2005 Nikolai Weibull <work@rawuncut.elitemail.org>
  */
@@ -9,8 +9,9 @@
 #include <ruby.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <ned/unicode.h>
-#include <sys/types.h>
+#include <stddef.h>
+
+#include <encoding/character/utf-8/unicode.h>
 
 #include "mempool.h"
 #include "private.h"
@@ -29,21 +30,21 @@ pattern||matcher.  */
 /*¶ We begin, again, with a few macros and type definitions that we’ll use in
 the rest of the code: */
 
-#define PATTERNMATCHER2VALUE(pm)            \
-        Data_Wrap_Struct(s_cPatternMatcher, NULL, pattern_matcher_free, (pm))
+#define PORE2VALUE(pm)            \
+        Data_Wrap_Struct(s_cPore, NULL, pattern_matcher_free, (pm))
 
-#define VALUE2PATTERNMATCHER(value, pm)     \
-        Data_Get_Struct((value), PatternMatcher, (pm))
+#define VALUE2PORE(value, pm)     \
+        Data_Get_Struct((value), Pore, (pm))
 
 
-typedef struct _PatternMatcher PatternMatcher;
+typedef struct _Pore Pore;
 
-struct _PatternMatcher {
+struct _Pore {
         TNFA *tnfa;
         char *source;
 };
 
-static ID s_cPatternMatcher;
+static ID s_cPore;
 
 HIDDEN ID g_ePatternError;
 HIDDEN ID g_id_read;
@@ -55,10 +56,10 @@ textual representation of the regular expression used as an input pattern. */
 /*¶ Ruby needs a way to free data structures associated with Ruby objects
 whenever they are about to be claimed by the garbage collector.  We have
 already used the function above, in the definition of the
-\C{PATTERNMATCHER2VALUE} macro, but we’ve deferred defining it until now. */
+\C{PORE2VALUE} macro, but we’ve deferred defining it until now. */
 
 static void
-pattern_matcher_free(PatternMatcher *pm)
+pattern_matcher_free(Pore *pm)
 {
         TNFA *tnfa = pm->tnfa;
 
@@ -107,12 +108,12 @@ the first place: */
 static VALUE
 pattern_matcher_s_allocate(UNUSED(VALUE class))
 {
-        PatternMatcher *pm = ALLOC(PatternMatcher);
+        Pore *pm = ALLOC(Pore);
 
         pm->tnfa = CALLOC_N(TNFA, 1);
         pm->source = NULL;
 
-        return PATTERNMATCHER2VALUE(pm);
+        return PORE2VALUE(pm);
 }
 
 /*¶ This isn’t the whole story, though.  The rest of the allocation actually
@@ -131,8 +132,8 @@ pattern_matcher_initialize(int argc, VALUE *argv, VALUE self)
         ASTNode *tree = pattern_parse(pool, pattern, rules,
                                       &n_nodes, &n_submatches);
 
-        PatternMatcher *pm;
-        VALUE2PATTERNMATCHER(self, pm);
+        Pore *pm;
+        VALUE2PORE(self, pm);
 
         ast_compile(pool, pm->tnfa, tree, n_nodes, n_submatches);
 
@@ -182,8 +183,8 @@ pattern_matcher_match(VALUE self, VALUE input)
         if (!RTEST(checked))
                 return checked;
 
-        PatternMatcher *pm;
-        VALUE2PATTERNMATCHER(self, pm);
+        Pore *pm;
+        VALUE2PORE(self, pm);
 
         VALUE matches = Qnil;
         return tnfa_matches(pm->tnfa, input, &matches) ? matches : Qnil;
@@ -204,8 +205,8 @@ pattern_matcher_match_simple(VALUE self, VALUE input)
         if (!RTEST(checked))
                 return checked;
 
-        PatternMatcher *pm;
-        VALUE2PATTERNMATCHER(self, pm);
+        Pore *pm;
+        VALUE2PORE(self, pm);
 
         VALUE matches = Qnil;
         if (!tnfa_matches(pm->tnfa, input, &matches))
@@ -228,8 +229,8 @@ pattern_matcher_match_eqq(VALUE self, VALUE input)
         if (!RTEST(checked))
                 return checked;
 
-        PatternMatcher *pm;
-        VALUE2PATTERNMATCHER(self, pm);
+        Pore *pm;
+        VALUE2PORE(self, pm);
 
         return BOOL2VALUE(tnfa_matches(pm->tnfa, input, NULL));
 }
@@ -241,9 +242,9 @@ the source pattern.  Let’s write a function that does just that now: */
 static VALUE
 pattern_matcher_source(VALUE self)
 {
-        PatternMatcher *pm;
+        Pore *pm;
 
-        VALUE2PATTERNMATCHER(self, pm);
+        VALUE2PORE(self, pm);
 
         VALUE str;
         str = rb_str_new2(pm->source);
@@ -260,13 +261,13 @@ a pattern||matcher object: */
 static VALUE
 pattern_matcher_inspect(VALUE self)
 {
-        PatternMatcher *pm;
+        Pore *pm;
 
-        VALUE2PATTERNMATCHER(self, pm);
+        VALUE2PORE(self, pm);
 
         char buf[INSPECT_BUFFER_SIZE];
         int len = snprintf(buf, INSPECT_BUFFER_SIZE,
-                           "#<PatternMatcher:%p source=%s>",
+                           "#<Matcher::Pattern::Pore:%p source=%s>",
                            pm, pm->source);
         return rb_str_new(buf, len);
 }
@@ -332,37 +333,40 @@ pattern_matcher_s_escape(UNUSED(VALUE class), VALUE str)
 /*¶ And, yet again, we define an interface to our code for Ruby.  This is
 highly uninteresting, though, and don’t linger in reading through it: */
 
-void Init_patternmatcher(void);
+void Init_pore(void);
 
-void Init_patternmatcher(void)
+void Init_pore(void)
 {
         g_id_read = rb_intern("read");
 
-        s_cPatternMatcher = rb_define_class("PatternMatcher", rb_cObject);
-        rb_define_alloc_func(s_cPatternMatcher, pattern_matcher_s_allocate);
+        VALUE mMatcher = rb_define_module("Matcher");
+        VALUE mPattern = rb_define_module_under(mMatcher, "Pattern");
 
-        rb_define_singleton_method(s_cPatternMatcher, "compile",
+        s_cPore = rb_define_class_under(mPattern, "Pore", rb_cObject);
+        rb_define_alloc_func(s_cPore, pattern_matcher_s_allocate);
+
+        rb_define_singleton_method(s_cPore, "compile",
                                    rb_class_new_instance, -1);
-        rb_define_singleton_method(s_cPatternMatcher, "quote",
+        rb_define_singleton_method(s_cPore, "quote",
                                    pattern_matcher_s_escape, 1);
-        rb_define_singleton_method(s_cPatternMatcher, "escape",
+        rb_define_singleton_method(s_cPore, "escape",
                                    pattern_matcher_s_escape, 1);
 
-        rb_define_method(s_cPatternMatcher, "initialize",
+        rb_define_method(s_cPore, "initialize",
                          pattern_matcher_initialize, -1);
-        rb_define_method(s_cPatternMatcher, "match", pattern_matcher_match, 1);
-        rb_define_method(s_cPatternMatcher, "=~",
+        rb_define_method(s_cPore, "match", pattern_matcher_match, 1);
+        rb_define_method(s_cPore, "=~",
                          pattern_matcher_match_simple, 1);
-        rb_define_method(s_cPatternMatcher, "===",
+        rb_define_method(s_cPore, "===",
                          pattern_matcher_match_eqq, 1);
-        rb_define_method(s_cPatternMatcher, "source",
+        rb_define_method(s_cPore, "source",
                          pattern_matcher_source, 0);
-        rb_define_method(s_cPatternMatcher, "inspect",
+        rb_define_method(s_cPore, "inspect",
                          pattern_matcher_inspect, 0);
 
-        g_ePatternError = rb_define_class_under(s_cPatternMatcher,
+        g_ePatternError = rb_define_class_under(s_cPore,
                                                 "PatternError",
                                                 rb_eStandardError);
 
-        Init_Match(s_cPatternMatcher);
+        Init_Match(s_cPore);
 }

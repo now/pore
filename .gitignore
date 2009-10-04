@@ -1,0 +1,8 @@
+*.sw?
+*.so
+Makefile
+depend
+mkmf.log
+TAGS
+packages/
+tmp/

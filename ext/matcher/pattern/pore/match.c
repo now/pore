@@ -5,8 +5,12 @@
  */
 
 #include <ruby.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <sys/types.h>
+
+#include <encoding/character/utf-8/unicode.h>
 
 #include "private.h"
 #include "match.h"

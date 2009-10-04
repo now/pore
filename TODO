@@ -1,0 +1,2 @@
+Return byte indexes instead of character indexes in matches.
+(Or perhaps make it a flag, or return both?)

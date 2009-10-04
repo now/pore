@@ -27,7 +27,7 @@ that will allow users to inspect a given Ruby value.  We need a buffer for
 creating the string that will represent our Ruby values, so we define a global
 buffer size to be used for such buffers: */
 
-#define INSPECT_BUFFER_SIZE 256
+#define INSPECT_BUFFER_SIZE ((size_t)256)
 
 
 /*¶ The \CLang\ language is rather primitive and doesn’t provide an easy way to
